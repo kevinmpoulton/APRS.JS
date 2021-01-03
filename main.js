@@ -24,7 +24,7 @@ class ax25
 	// --- --------
 	// In order to assure that the flag bit sequence mentioned above doesn't appear accidentally anywhere else in a frame, the sending station shall monitor 
 	// the bit sequence for a group of five or more contiguous one bits. Any time five contiguous one bits are sent the sending station shall insert a zero bit 
-	// after the first one bit. During frame reception, any time five contiguous one bits are received, a zero bit immediately following five one bits shall be discarded. 
+	// after the fifth one bit. During frame reception, any time five contiguous one bits are received, a zero bit immediately following five one bits shall be discarded. 
 
 	// Order of Bit Transmission
 	// ----- -- --- ------------
@@ -37,13 +37,10 @@ class ax25
 	// For non-repeater use this will generally be C11SSID0. 
 	// For a v2 Response, C will be 0 for destination and 1 for source. 
 	// E.g. for a desintation SSID of 0 it will be 01100000 and for a source SSID of 0 it will be 1110000
-	
-	// FX25 Details
-	// ---- -------
-	// FX25 algorithm is RS(48,32) - shortened RS(255, 239), 32 info bytes
+	// Note that when comparing to direwolf this seems to send 11100000 for both so have followed this below. 
 
 
-	constructor() {
+	constructor({destination_address, destination_SSID, source_address, source_SSID, information_field}) {
 
 		this.bitstream = [];
 		
@@ -51,22 +48,27 @@ class ax25
 		this.sr1 = 0x1F;
 		this.sr2 = 0x7F;
 		this.sr3 = 0x0F;
+
 		this.bitCount = 0;
 		this.consecutive_ones = 0;
-
-		this.destination_address = "APRS";		//8-48
-		this.destination_SSID = 0;				
-		this.source_address = "2E0LDN"			//64-104
-		this.source_SSID = 0					//112			
-		this.information_field = "A"
+		
+		/* Setters */
+		this.destination_address = destination_address;		
+		this.destination_SSID = destination_SSID;				
+		this.source_address = source_address;			
+		this.source_SSID = source_SSID;
+		this.information_field = information_field;
 		
 
-		console.log('--Modem lock and first flag');
+		console.log('--Preamble');
 		/* Modem lock */
-		for(var i = 0; i < 33; ++i) {
+		for(var i = 0; i < 32; ++i) {
 			this.addByte({b: 0x7e, updateCRC: false,stuff: false});	// Position 0	
 		}
-
+		
+		console.log('--first flag');
+		this.addByte({b: 0x7e, updateCRC: false,stuff: false});	// Position 0	
+		
 		/* Destination Address - 7 Bytes */
 		 console.log('--Destination Address');
 		 this.addAddress({address: this.destination_address, type: 'destination', SSID: this.destination_SSID, last: false});		
@@ -76,7 +78,8 @@ class ax25
 		 this.addAddress({address: this.source_address, type: 'source', SSID: this.source_SSID, last: true});		
 		
 		/* Digipeter Addresses (0-8) - 0-56 bytes */
-		
+		// TODO - create digipeater addresses
+
 		/* Control Field (UI)- 1 byte  */
 		 console.log('--Control Field');
 		 this.addByte({b: 0x03});	
@@ -86,9 +89,11 @@ class ax25
 		 this.addByte({b: 0xf0});	
 
 		/* Information Field - 1-256 bytes  */
-		// console.log('--Information Field');
-		 this.addByte({b: 0x48});		//H
-		 this.addByte({b: 0x49});		//I
+		 console.log('--Information Field');
+		 for (let c of this.information_field)
+		 {
+			this.addByte({b: c.toUpperCase().charCodeAt(0)});		
+		 }
 	
 		/* FCS 2 bytes  */
 		 var CRC = this.getCRC();
@@ -332,9 +337,11 @@ class modem
 		// To do this we keep a running tally of what the next phase would have been if it had continued one timestep forward
 		// and then calculate the new phase correction based on the difference. 
 		
+		// TODO - mmake samples dynamic, it's not used at the moment. 
+
 		var phaseCorrection = this.nextPhaseCorrection;
 		
-		console.log("starting bit",this.bitCount,"at sample number ",this.sampleN);
+		//console.log("starting bit",this.bitCount,"at sample number ",this.sampleN);
 		samples = this.bitCount % 4 == 0 ? 36 : 37;
 		samples = this.bitCount == 0 ? 37 : samples;
 		for (var i = 0; i < samples; i++) {
@@ -346,7 +353,7 @@ class modem
 			this.nextPhaseCorrection = (2 * Math.PI) * ((i+1) / this.sampleRate) * freq + phaseCorrection;
 			this.sampleN++;
 		}
-		console.log("ending bit",this.bitCount,"at sample number ",this.sampleN-1);
+		//console.log("ending bit",this.bitCount,"at sample number ",this.sampleN-1);
 
 		this.bitCount++;
 	}
@@ -420,14 +427,34 @@ class modem
 
 class fx25
 {
+	
+	// FX25 Details
+	// ---- -------
+	// FX25 working document is http://www.stensat.org/docs/FX-25_01_06.pdf
+	// FX25 algorithm is RS(48,32) - shortened RS(255, 239), 32 info bytes
+
 	constructor({ax25}) {
-		console.log(fx25);
+		
+		this.bitstream = [];
+		
+		console.log("Starting FX25 calculation.");
+		
 	}
 }
 
 function generate() {
 
-	a = new ax25();
+	a = new ax25(
+		{
+			destination_address: "APRS",
+			destination_SSID: 0,
+			source_address: "M0VXY",
+			source_SSID: 0,
+			information_field: "HELLO"
+		});
+	
+	f = new fx25(a);
+
 	m = new modem();
 	
 	m.bitstream = a.bitstream;

@@ -4,6 +4,7 @@
 			<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 			<title>APRS Generator</title>
 			<script type="text/javascript" src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+			<script type="text/javascript" src="rs.js"></script>
 			<script type="text/javascript" src="main.js"></script>
 		</head>
 
@@ -13,11 +14,12 @@
 
 <p>FSK code has been adapted from <a href="http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari">http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari/</a>/</p>
 <p>Click Generate Sound to generate the sound in browser</p>
-
-
-<form onsubmit="generate(); return false;">
-<input type="submit" value="Generate Sound">
-<input type="button" value="Download Wav File" id="jmp" disabled="true" onclick="location.href=dataURI">
+<form onsubmit="if(generate() === null) {alert('Error in assembling packet');}; return false;">
+	<input id="src" name="src" type="text" value="2E0LDN">&nbsp;<input id="src_SSID" name="src_SSID" type="text" value="0"><br/>
+	<input id="destination" name="destination" type="text" value="APRS">&nbsp;<input id="dest_SSID" name="dest_SSID" type="text" value="0"><br/>
+	<input id="message" name="message" type="text" value="HELLO KEVIN"><br/>
+	<input type="submit" value="Generate Sound">
+	<input type="button" value="Download Wav File" id="jmp" disabled="true" onclick="location.href=dataURI">
 </form>
 </body>
 

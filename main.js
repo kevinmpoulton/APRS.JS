@@ -1,4 +1,4 @@
-
+13/01/2021
 
 /* Globals */
 var dataURI, audio;
@@ -8,6 +8,7 @@ var dataURI, audio;
 function $(name) {
 	return document.getElementById(name);
 }
+
 
 
 class ax25
@@ -41,78 +42,72 @@ class ax25
 
 
 	constructor({destination_address, destination_SSID, source_address, source_SSID, information_field}) {
-
+		
+		/* Create a new AX25 packet */
+		
+		// This and the FX25 objects both have bitstream arrays to represent all the bits in the frame 
 		this.bitstream = [];
 		
-		/* These are the starting points for the CRC registers */
+		// These are the starting points for the CRC registers. 
+		// These will get iterated each time we add a bit to the bitstream to calculate the CRC 
 		this.sr1 = 0x1F;
 		this.sr2 = 0x7F;
 		this.sr3 = 0x0F;
-
+		
+		// Number of bits we have added.
 		this.bitCount = 0;
 		this.consecutive_ones = 0;
 		
-		/* Setters */
+		// Set the object parameters appropriately. 
+		// TODO - add digippeters
 		this.destination_address = destination_address;		
 		this.destination_SSID = destination_SSID;				
 		this.source_address = source_address;			
 		this.source_SSID = source_SSID;
 		this.information_field = information_field;
 		
-
-		console.log('--Preamble');
-		/* Modem lock */
-		for(var i = 0; i < 32; ++i) {
-			this.addByte({b: 0x7e, updateCRC: false,stuff: false});	// Position 0	
-		}
-		
-		console.log('--first flag');
+		// Firstly, we start the AX25 frame by adding a single 0x7e flag byte. 
+		// It is excluded from stuffing and doesn't count towards the CRC
 		this.addByte({b: 0x7e, updateCRC: false,stuff: false});	// Position 0	
 		
-		/* Destination Address - 7 Bytes */
-		 console.log('--Destination Address');
-		 this.addAddress({address: this.destination_address, type: 'destination', SSID: this.destination_SSID, last: false});		
+		// Destination Address - 7 Bytes 
+		this.addAddress({address: this.destination_address, type: 'destination', SSID: this.destination_SSID, last: false});		
 
-		/* Source Address - 7 Bytes */
-		 console.log('--Source Address');
-		 this.addAddress({address: this.source_address, type: 'source', SSID: this.source_SSID, last: true});		
+		// Source Address - 7 Bytes 
+		this.addAddress({address: this.source_address, type: 'source', SSID: this.source_SSID, last: true});		
 		
-		/* Digipeter Addresses (0-8) - 0-56 bytes */
+		// Digipeter Addresses (0-8) - 0-56 bytes
 		// TODO - create digipeater addresses
 
-		/* Control Field (UI)- 1 byte  */
-		 console.log('--Control Field');
-		 this.addByte({b: 0x03});	
+		// Control Field (UI)- 1 byte 
+		// This and the protocol field are static and identify this as an AX25 frame. 
+		this.addByte({b: 0x03});	
 		
-		/* Protocol Field (UI)- 1 byte  */
-		 console.log('--Protocol Field');
-		 this.addByte({b: 0xf0});	
+		// Protocol Field (UI)- 1 byte  
+		this.addByte({b: 0xf0});	
 
-		/* Information Field - 1-256 bytes  */
-		 console.log('--Information Field');
-		 for (let c of this.information_field)
-		 {
+		// Information Field - 1-256 bytes 
+		// TODO - there is lots of logic to deal with here.
+		for (let c of this.information_field)
+		{
 			this.addByte({b: c.toUpperCase().charCodeAt(0)});		
-		 }
+		}
 	
-		/* FCS 2 bytes  */
-		 var CRC = this.getCRC();
-		 console.log('--CRC');
-		 this.addByte({b: CRC.byte1, updateCRC: false});		//152
-		 this.addByte({b: CRC.byte2, updateCRC: false});		//160
+		// FCS 2 bytes 
+		var CRC = this.getCRC();
+		this.addByte({b: CRC.byte1, updateCRC: false});
+		this.addByte({b: CRC.byte2, updateCRC: false});
+			
+		// End the AX25 frame with a 0x7e flag
+		this.addByte({b: 0x7e, updateCRC: false, stuff: false});
 
-		
-		/* Flag - 1 Byte */
-		 console.log('--Flag');
-		 this.addByte({b: 0x7e, updateCRC: false, stuff: false});		// Flag (end)
-		 this.addByte({b: 0x7e, updateCRC: false, stuff: false});		// Flag (end)
-		 this.addByte({b: 0x7e, updateCRC: false, stuff: false});		// Flag (end)
-
-		//this.logBitstream();
 	}
-
+	
 	recordCRCBit({bit}) {
 		
+		/* This function udpates the sr1,sr2,sr3 registers each time a bit is recorded. The CRC algorithm
+		   is based on the algorithm here http://practicingelectronics.com/articles/article-100003/article.php */
+
 		++this.bitCount;
 		
 		/* 1st step calculate feedback value  */
@@ -139,10 +134,11 @@ class ax25
 
 	addAddress({address, SSID, type, last = false}) {
 
-	/* This field adds an address to the frame */
-	// There are 7 bytes in the address field, the first 6 are the callsign and 7 is the SSID
-	// addresses are all upper case and are padded with spaces if less than 6 chacters
-
+	/* This function adds an address to the frame. 
+	   There are 7 bytes in the address field, the first 6 are the callsign and 7 is the SSID
+	   addresses are all upper case and are padded with spaces if less than 6 chacters */
+		
+		// The current byte
 		var b;
 
 		// Iterate through all 7 bytes of the address
@@ -155,44 +151,47 @@ class ax25
 				b = 0x20;			// Space
 			}
 			
-			// SSID is going to be 0111SSID before left shifting.
-			
+			// Byte 6 (7th byte) of the address is the SSID. The SSID is a single byte with different bits representing
+			// different aspects of the routing. SSID is going to be 0111SSID before left shifting.
 			if (i == 6)
 			{
-				var mask = 0x70;		//01110000
-
+				var mask = 0x70;		
 				b = mask |= SSID;
 			}
 			
 			// We need to left shift the bits by one position to make way for the HDLC bit.
-			// This drops off the MSB which is fine because callsigns should not be using ASCII 128+
+			// This drops off the MSB which is fine because addresses should not be using ASCII 128+
 
 			b = b << 1;				
 
-			// The last bit of the last byte in an address field is set to one if this is the last 
-			// address field in the list. 
+			// The LSB bit of the last byte in an address field is set to one if this is the last 
+			// address field in the list. This is how receiver knows how to move to the next part 
+			// of the frame.
 
 			if (i == 6 && last)
 			{
 				b |= 1;
 			}
 
-			// Add the byte to the frame 
+			// Add this byte to the frame 
 			this.addByte({b: b});
-
-
 		}
 
 	}
 
 	addByte({b, updateCRC = true, stuff = true}) {
 		
-		var logText = "";
-
+		/* This is the core function of adding bytes to the bitstream */
+		
 		for(let j = 0; j < 8; j++) {
+
 			var bit = (b & Math.pow(2,j)) >> j;
 			this.bitstream.push(bit);
-			logText += (" " + bit);
+			
+			// This code looks to see if 5 consecutive ones have been sent. 
+			// If so, a 'spare' zero is inserted into the bitstream. This is
+			// done so that receivers can tell the difference between 0x7e flags
+			// and other combinations 
 
 			if(bit == 0) {
 				this.consecutive_ones = 0;
@@ -205,21 +204,23 @@ class ax25
 				{
 					this.consecutive_ones = 0;
 					this.bitstream.push(0);
-					logText += (" *");
 				}
 			}
+			
+			// If this bit is in scope for the CRC calculation, calcualte the next
+			// iteration.
 
 			if(updateCRC) {
 				this.recordCRCBit({bit: bit});
 			}
 		}
 
-		console.log(logText);
 	}
 	
 
 
 	logBitstream() {
+		/* Log the bitstream to the console for debugging purposes */
 		for (let i = 0; i < this.bitstream.length; i = i + 8)
 		{
 			console.log(i,': ',this.bitstream[i], this.bitstream[i+1], this.bitstream[i+2], this.bitstream[i+3], this.bitstream[i+4], this.bitstream[i+5], this.bitstream[i+6], this.bitstream[i+7]);
@@ -229,6 +230,7 @@ class ax25
 
 	
 	getCRC() {
+		/* Return the two bytes, assembled from the sr1, sr2, sr3 registers */
 		var byte1 = 
 			(((this.sr2 & 8) != 8) * 128) + 
 			(((this.sr2 & 4) != 4) * 64) + 
@@ -250,31 +252,6 @@ class ax25
 		return {byte1: byte1, byte2: byte2};
 	}
 
-	logCRC() {
-		console.log(
-			"CRC: ",
-
-			(this.sr1 & 16) >> 4, 
-			(this.sr1 & 8) >> 3, 
-			(this.sr1 & 4) >> 2, 
-			(this.sr1 & 2) >> 1, 
-			(this.sr1 & 1) >> 0,
-			
-			(this.sr2 & 64) >> 6,
-			(this.sr2 & 32) >> 5,
-			(this.sr2 & 16) >> 4,
-			(this.sr2 & 8) >> 3,
-			(this.sr2 & 4) >> 2,
-			(this.sr2 & 2) >> 1,
-			(this.sr2 & 1) >> 0,
-
-			(this.sr3 & 8) >> 3,
-			(this.sr3 & 4) >> 2,
-			(this.sr3 & 2) >> 1,
-			(this.sr3 & 1) >> 0
-			
-		)
-	}
 
 }
 
@@ -327,6 +304,7 @@ class modem
 		this.sampleN = 0; 
 		this.bitCount = 0;
 		this.data="";
+
 	}
 
 	pushData(freq, samples) {
@@ -366,9 +344,11 @@ class modem
 	}
 	
 	
-	generateAudio() {
+	generateAudio(source) {
 		
 		/* This is the main loop for generating bits */
+		this.bitstream = source.bitstream;
+		
 		var currentTone = this.freqLow;
 			
 		var newTone = 0;
@@ -431,36 +411,175 @@ class fx25
 	// FX25 Details
 	// ---- -------
 	// FX25 working document is http://www.stensat.org/docs/FX-25_01_06.pdf
-	// FX25 algorithm is RS(48,32) - shortened RS(255, 239), 32 info bytes
 
-	constructor({ax25}) {
+
+	constructor(a) {
 		
 		this.bitstream = [];
 		
-		console.log("Starting FX25 calculation.");
+		console.log("Starting FX25 frame construction.");
 		
+		// First step is to get the AX25 frame padded 
+		// Start by calculating the packet size required aligned to
+		// the rs parameters
+
+		console.log('--FX25 Padding');
+		console.log('----AX25 Packet pre-packing is', a.bitstream.length,'bits long (',a.bitstream.length/8,' bytes)')
+		
+		var bits_required = 239 * 8;
+		if(a.bitstream.length <= 32 * 8) 
+			bits_required = 32 * 8;
+		else if(a.bitstream.length <= 64 * 8) 
+			bits_required = 64 * 8;
+		else if(a.bitstream.length <= 128 * 8) 
+			bits_required = 128 * 8;
+		else if(a.bitstream.length >= 239 * 8) {
+			console.log("Error - packet too big.");
+			return false;
+		}
+
+		console.log("----Target packet length for RS is",bits_required,"bits (",bits_required/8,' bytes)');
+
+		var bits_remaining = bits_required - a.bitstream.length;
+		console.log('----Therefore we will pad with',bits_remaining,'bits.')
+
+		while (bits_remaining> 0)
+		{
+			if (bits_remaining >= 8)
+			{
+				this.addByte({b: 0x7e, target: a.bitstream});					
+				bits_remaining -=8;
+			} else {
+				this.addByte({b: 0x7e, target: a.bitstream, section: bits_remaining});
+				bits_remaining = 0;
+			}
+		}
+		
+		console.log('----Padding of AX25 is completed and it is now',a.bitstream.length,'bits.')
+
+		
+		// Now we need to calculate the FEC Check symbols for the bitstream over the codelength. 		
+		console.log('----Calculating the FEC Check Symbols');
+		console.log("----FEC codeblock (AX25 packet) size is exactly",a.bitstream.length/8,"bytes.");
+		
+		// Turn the bitstream into bytes for rs calculation
+		var message = [];
+		for (var b = 0; b < a.bitstream.length/8; ++b)
+		{
+			var byte_start_bit = b * 8;
+			
+			var byte = 0;
+			for (var bit = 0; bit <8 ; ++bit )
+			{
+				byte += (a.bitstream[byte_start_bit + bit] << bit);
+			}
+			
+			message.push(byte);
+		}
+		
+		console.log("----FEC codeblock is",message.length,"bytes.")
+		var rs = new ReedSolomon();
+		rs.encode(message);
+		
+		
+		console.log("----checkbytes are",rs.checkbytes.length,"bytes.");
+
+		for (var i=0;i<rs.checkbytes.length; ++i )
+		{
+			//console.log("----FEC Symbol",i,"is",rs.checkbytes[i].toString(16));
+		}
+
+		// Now assemble all the components into the packet
+		// preamble + correlation tag + ax25 package + fx25 package
+		
+		var ax25 = this.bitstream;
+		this.bitstream = [];
+
+		// Preamble!
+		for (var i=0; i<16; ++i )
+		{
+			this.addByte({b: 0x7e});	
+		}
+		
+		// Correlation tag!
+		console.log("----Adding Correlation tag.");
+		for (var i=rs.correlation_tag.length - 1;i >= 0; --i )
+		{
+			this.addByte({b: Number(rs.correlation_tag[i])});
+		}
+
+		// AX25 packet
+		console.log("----Adding AX25 packet.");
+		this.bitstream = this.bitstream.concat(a.bitstream);
+		
+		// Checkbytes
+		console.log("----Adding Checkbytes.");
+		for (var i=0;i<rs.checkbytes.length ;++i )
+		{
+			this.addByte({b: rs.checkbytes[i]})
+		}
+		
+		// Finally 2 postamble bytes
+		console.log('--FX Postamble');
+		this.addByte({b: 0x7e});	
+		this.addByte({b: 0x7e});	
+
 	}
+
+	addByte({b, target=this.bitstream, section=8}) {
+
+		var logText = "";
+		for(let j = 0; j < section; j++) {
+			var bit = (b & Math.pow(2,j)) >> j;
+			target.push(bit);
+			logText += (" "+bit);
+		}
+		
+
+	}
+
+
+	
+
+
+	logBitstream() {
+		for (let i = 0; i < this.bitstream.length; i = i + 8)
+		{
+			console.log(i,': ',this.bitstream[i], this.bitstream[i+1], this.bitstream[i+2], this.bitstream[i+3], this.bitstream[i+4], this.bitstream[i+5], this.bitstream[i+6], this.bitstream[i+7]);
+		}
+	}
+	
 }
 
 function generate() {
-
+	
+	/*	This function creates the objects to represent the ax25 frame and then 
+		passes them to the modem object. */
+	
+	// Start by creating a raw ax25 frame.
 	a = new ax25(
 		{
-			destination_address: "APRS",
-			destination_SSID: 0,
-			source_address: "M0VXY",
-			source_SSID: 0,
-			information_field: "HELLO"
+			destination_address: ($('destination').value),
+			destination_SSID: ($('dest_SSID').value),
+			source_address: ($('src').value),
+			source_SSID: ($('src_SSID').value),
+			information_field: ($('message').value)
 		});
 	
-	f = new fx25(a);
+	if(a === null) {
+		return null;
+	}
 
+	// Now, take the ax25 frame and wrap it with the necessary components for a fx25 frame.
+	f = new fx25(a);
+	
+	// Create a modem object to make the actual sounds
 	m = new modem();
 	
-	m.bitstream = a.bitstream;
-	m.generateAudio();
-	//a.logBitstream()
-	//m.generateXLSX();
+	// Generate the audio. This populates the dataURI variable with as well.
+	m.generateAudio(f);
+	
+	// Play the audi through the browser.
 	m.playAudio();
 }
 

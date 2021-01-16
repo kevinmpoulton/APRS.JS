@@ -1,4 +1,7 @@
-13/01/2021
+/***********************************************************************************************************************
+* FSK code has been adapted from http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari/
+*
+************************************************************************************************************************
 
 /* Globals */
 var dataURI, audio;
@@ -9,6 +12,15 @@ function $(name) {
 	return document.getElementById(name);
 }
 
+function convert_positions(decimal) {
+	// Converts decimal coordinates from javascript to deg/min/sec
+	var coord = {};
+	coord.degrees = Math.floor(Math.abs(decimal));
+	coord.minutes = Math.floor((Math.abs(decimal) - coord.degrees) * 60);
+	coord.seconds = Math.floor((Math.abs(decimal) - coord.degrees - (coord.minutes / 60)) * 3600);
+	coord.hemisphere = decimal > 0 ? true : false;
+	return coord;
+}
 
 
 class ax25
@@ -41,7 +53,7 @@ class ax25
 	// Note that when comparing to direwolf this seems to send 11100000 for both so have followed this below. 
 
 
-	constructor({destination_address, destination_SSID, source_address, source_SSID, information_field}) {
+	constructor({destination_address, destination_SSID, source_address, source_SSID, digipeaters, information_field}) {
 		
 		/* Create a new AX25 packet */
 		
@@ -58,13 +70,55 @@ class ax25
 		this.bitCount = 0;
 		this.consecutive_ones = 0;
 		
-		// Set the object parameters appropriately. 
-		// TODO - add digippeters
+		// Set the object parameters appropriately, except for information field. 
+		// TODO - add validation at this point. 
 		this.destination_address = destination_address;		
 		this.destination_SSID = destination_SSID;				
 		this.source_address = source_address;			
 		this.source_SSID = source_SSID;
-		this.information_field = information_field;
+		this.digipeaters = digipeaters;
+		
+		var informationField = "";
+
+		// Now sort the infromation_field. 
+		if(information_field.type == 'message') {
+			informationField = ":";
+			informationField += information_field.text;
+		}
+		 
+		if(information_field.type == 'position') {
+
+			var latitude  = convert_positions(information_field.latitude);
+			var longitude = convert_positions(information_field.longitude);
+						
+			informationField   = "!";
+			
+			console.log(information_field);
+
+			informationField  = informationField + latitude.degrees.toString().padStart(2,'0');
+			informationField  = informationField + latitude.minutes.toString().padStart(2,'0');
+			informationField  = informationField + ".";
+			informationField  = informationField + latitude.seconds.toString().padStart(2,'0');
+			informationField  = informationField + (latitude.hemisphere ? "N" : "S");
+			
+			informationField += "/";
+
+			informationField  = informationField + longitude.degrees.toString().padStart(3,'0');
+			informationField  = informationField + longitude.minutes.toString().padStart(2,'0');
+			informationField  = informationField + ".";
+			informationField  = informationField + longitude.seconds.toString().padStart(2,'0');
+			informationField  = informationField + (longitude.hemisphere ? "E" : "W");
+			
+			//symbol code
+			informationField = informationField + "-";
+			
+			//comment
+			informationField = informationField + information_field.comment;
+			
+		}
+		
+
+		this.information_field = informationField;
 		
 		// Firstly, we start the AX25 frame by adding a single 0x7e flag byte. 
 		// It is excluded from stuffing and doesn't count towards the CRC
@@ -74,9 +128,15 @@ class ax25
 		this.addAddress({address: this.destination_address, type: 'destination', SSID: this.destination_SSID, last: false});		
 
 		// Source Address - 7 Bytes 
-		this.addAddress({address: this.source_address, type: 'source', SSID: this.source_SSID, last: true});		
+		this.addAddress({address: this.source_address, type: 'source', SSID: this.source_SSID, last: (this.digipeaters.length > 0 ? false : true)});		
 		
-		// Digipeter Addresses (0-8) - 0-56 bytes
+		// Digipeter Addresses (0-8) - 0-56 bytes		
+		// TODO MULTIPLE DIGIPEATERS
+		if(this.digipeaters.length > 0) {
+			this.addAddress({address: this.digipeaters[0], type: 'digipeater', SSID: 1, last: true});		
+		}
+
+
 		// TODO - create digipeater addresses
 
 		// Control Field (UI)- 1 byte 
@@ -133,6 +193,7 @@ class ax25
 
 
 	addAddress({address, SSID, type, last = false}) {
+		console.log(address, SSID, type, last);
 
 	/* This function adds an address to the frame. 
 	   There are 7 bytes in the address field, the first 6 are the callsign and 7 is the SSID
@@ -153,7 +214,7 @@ class ax25
 			
 			// Byte 6 (7th byte) of the address is the SSID. The SSID is a single byte with different bits representing
 			// different aspects of the routing. SSID is going to be 0111SSID before left shifting.
-			if (i == 6)
+			if (i == 6 && type != 'digipeater')
 			{
 				var mask = 0x70;		
 				b = mask |= SSID;
@@ -251,7 +312,6 @@ class ax25
 			(((this.sr2 & 16) != 16) * 1) 
 		return {byte1: byte1, byte2: byte2};
 	}
-
 
 }
 
@@ -385,7 +445,6 @@ class modem
 		audio = new Audio(dataURI);
 		audio.play();
 	
-		$('jmp').disabled = false;
 	}
 	
 	generateXLSX() {
@@ -551,19 +610,44 @@ class fx25
 	
 }
 
+function information_position_report(longitude, latitude, comment) {
+}
+
+function information_text() {
+}
+
 function generate() {
 	
 	/*	This function creates the objects to represent the ax25 frame and then 
 		passes them to the modem object. */
+
+	/* First of all we need to build out the correct information_field data */
+	
+	var message = {};
+	message.type = $('select_type').value;
+	
+	switch (message.type) {
+		case 'position':
+			message.longitude = $('text_longitude').value;
+			message.latitude  = $('text_latitude').value;
+			message.comment  = $('text_comment').value;
+			break;
+		
+		case 'message':
+			message.text     =  $('text_message').value;
+			break;
+		
+	}
 	
 	// Start by creating a raw ax25 frame.
 	a = new ax25(
 		{
-			destination_address: ($('destination').value),
-			destination_SSID: ($('dest_SSID').value),
-			source_address: ($('src').value),
-			source_SSID: ($('src_SSID').value),
-			information_field: ($('message').value)
+			destination_address: ($('text_destination').value),
+			destination_SSID: ($('text_destination_SSID').value),
+			source_address: ($('text_src').value),
+			source_SSID: ($('text_src_SSID').value),
+			digipeaters: [($('text_digipeaters').value)],			//note array
+			information_field: message
 		});
 	
 	if(a === null) {
@@ -579,7 +663,14 @@ function generate() {
 	// Generate the audio. This populates the dataURI variable with as well.
 	m.generateAudio(f);
 	
-	// Play the audi through the browser.
+	// Play the audio through the browser.
+	m.playAudio();
+
+	$('button_download').disabled = false;
+	$('button_play').disabled = false;
+}
+
+function playAudio() {
 	m.playAudio();
 }
 

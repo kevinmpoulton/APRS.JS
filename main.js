@@ -56,14 +56,14 @@ class ax25
 		// Start with the destination and source addresses. 3-6 upper case numbers or letters.
 		const re_address = RegExp('^[0-9A-Z]{3,6}$');
 		if(re_address.test(destination_address) === false) {
-			this.error_message = "Incorrectly formattted destination address. Should be 3-6 alpha-numberic characters only.";
+			this.error_message = "Incorrectly formattted destination address. Should be 3-6 CAPITAL letters/numbers characters only.";
 			return;
 		} 
 		
 		this.destination_address = destination_address;	 
 		
 		if(re_address.test(source_address) === false) {
-			this.error_message = "Incorrectly formattted source address. Should be 1-6 alpha-numberic characters only.";
+			this.error_message = "Incorrectly formattted source address. Should be 3-6 CAPITAL letters/numbers characters only.";
 			return;
 		}
 		
@@ -73,7 +73,7 @@ class ax25
 		// Now the source and destination SSIDs, should be number between 0 and 15.
 		const re_SSID = RegExp('^[0-9]{1,2}$');
 		if(re_SSID.test(destination_SSID) === false || destination_SSID < 0 || destination_SSID > 15) {
-			this.error_message = "Incorrectly formattted destination SSID. Should be between 0 and 15.";
+			this.error_message = "Incorrectly formattted destination SSID. Should be a number between 0 and 15.";
 			return;
 		}
 
@@ -81,7 +81,7 @@ class ax25
 		
 		
 		if(re_SSID.test(source_SSID) === false || source_SSID < 0 || source_SSID > 15) {
-			this.error_message = "Incorrectly formattted source SSID. Should be between 0 and 15.";
+			this.error_message = "Incorrectly formattted source SSID. Should be a number between 0 and 15.";
 			return;
 		}
 		

@@ -16,7 +16,7 @@
 				
 				function reflectSelect() {
 					selected = document.getElementById("select_type").value;
-					if(selected == "message") {
+					if(selected == "bulletin") {
 						document.getElementById("div_longitude").style.display = "none";
 						document.getElementById("div_latitude").style.display = "none";
 						document.getElementById("div_message").style.display = "block";
@@ -101,7 +101,7 @@
 				<div class="col">
 					<label for="select_type" class="form-label">Type of Message & APRS Data Type</label>
 					<select onChange="reflectSelect();" id="select_type" class="form-select form-select-sm" aria-label=".form-select-sm example">
-					  <option value="message" selected>Message (:)</option>
+					  <option value="bulletin" selected>Bulletin (:)</option>
 					  <option value="position">Position Report (@)</option>
 					 </select>
 				</div>
@@ -131,7 +131,7 @@
 			<div id="div_message" class="row">
 				<div class="col">
 					<label for="text_message" class="form-label">Message Text</label>
-					<textarea class="form-control" id="text_message" rows="3"placeholder="KEVINS TEST MESSAGE">HI</textarea>
+					<textarea class="form-control" id="text_message" rows="3" placeholder="Your message goes here">Testing https://github.com/kevinmpoulton/APRS.JS/</textarea>
 				</div>
 			</div>
 			<div id="div_error" class="row">
@@ -156,6 +156,6 @@
 
 </body>
 <script>
-		$('select_type').value = "message";
+		$('select_type').value = "bulletin";
 </script>
 </html>

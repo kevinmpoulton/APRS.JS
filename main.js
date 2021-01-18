@@ -94,8 +94,10 @@ class ax25
 		
 		this.digipeaters = [];
 		digipeaters = digipeaters.split(',');
-		console.log("There are",digipeaters.length,"digipeaters.");
 		for(var i =0; i < digipeaters.length; ++i) {
+			if(digipeaters[i].trim() == "") {
+				continue;
+			}
 			if(re_digipeater.test(digipeaters[i]) === false) {
 				this.error_message = "Incorrectly formattted digipeater. Should be in format ABCDEF-S or ABCDEF (e.g. WIDE2-2 or RELAY).";
 				return;
@@ -112,18 +114,18 @@ class ax25
 		}
 		
 		// Now sort the information field . 
-		const re_message = RegExp('^[A-Z]{1,254}$');
+		const re_message = RegExp('^[ -~]{1,254}$');
 
 		var informationField = "";
 		
-		// Each type of information field has a different format. This one deals with a simple text message
-		if(information_field.type == 'message') {
+		// Each type of information field has a different format. This one deals with a simple text message.
+		if(information_field.type == 'bulletin') {
 			if(re_message.test(information_field.text) === false) {
-				this.error_message = "Message field should be upper case characters only. ";
+				this.error_message = "Message field should printable ASCII characters only. ";
 				return;
 			}
 
-			informationField = ":";
+			informationField += ':BLN1     :';
 			informationField += information_field.text;
 		}
 		 
@@ -690,7 +692,7 @@ function generate() {
 			message.comment  = $('text_comment').value;
 			break;
 		
-		case 'message':
+		case 'bulletin':
 			message.text     =  $('text_message').value;
 			break;
 		

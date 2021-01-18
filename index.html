@@ -11,6 +11,7 @@
 			<script type="text/javascript" src="main.js"></script>
 			<script>
 				
+				var currentPosition = null;
 				
 				
 				function reflectSelect() {
@@ -29,13 +30,14 @@
 						document.getElementById("div_comment").style.display = "block";
 						document.getElementById("div_message").style.display = "none";
 						
-						if (false /*navigator.geolocation*/) {
+						if (currentPosition == null && navigator.geolocation) {
 							navigator.geolocation.getCurrentPosition(recordPosition);
 						}
 					}
 				}
 
 				function recordPosition(position) {
+					currentPosition = position;
 					document.getElementById("text_longitude").value = position.coords.longitude;
 					document.getElementById("text_latitude").value = position.coords.latitude;
 				};
@@ -47,53 +49,56 @@
 <div class="container">
   <main>
 	<div class="container">
-	  <h1>Javascript APRS</h1>
-	  <p>This is a proof of concept packet generator for APRS, implemented in Javascript. It uses FX25 encryption.</p>
+	  <h1>FX25 APRS in Javascript by Kevin Poulton M0VXY.</h1>
+	  <p>This is a proof of concept packet generator for APRS, implemented in Javascript. It uses FX25 encryption. I primarily built it to learn about the APRS protocol, but I have also hope it will serve to explain some of the more obscure practical components of creating a AX25/FX25 frame generator, and the modulation of the resulting frames over AFSK.</p>
 	  <h2>Credits</h2>
-	  <p>FSK code has been adapted from <a href="http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari">http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari/</a></p>
-	  <p>CRC check in AX25 based on <a href="http://practicingelectronics.com/articles/article-100003/article.php">http://practicingelectronics.com/articles/article-100003/article.php</a></p>
-	  <p>Reed-solomon coding for FX25 reverse engineered from <a href="https://github.com/wb2osz/direwolf">Direwolf</a></p>
+	  <p>I can't pretend to have originated much of this!</P>
+	  <p>FSK code has been adapted from <a href="http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari">http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari/</a>. Most important addition I made was to ensure phase continuity of the FSK signal.</p>
+	  <p>CRC check in AX25 based on <a href="http://practicingelectronics.com/articles/article-100003/article.php">http://practicingelectronics.com/articles/article-100003/article.php</a>. There are other versions of this out there. </p>
+	  <p>Reed-solomon coding for FX25 reverse engineered from <a href="https://github.com/wb2osz/direwolf">Direwolf</a>. In addition, I have used direwolf as my reference - outputted frames have been checked bit by bit against the direwolf output.</p>
 	  </p>
+	  <h2>How to use?</h2>
+	  <p>Populate the fields below. Leave the digipeater setting blank unless you know what you are doing. Set your radio to your local packet frequency (e.g. 144.800 for me in the UK), and transmitting the produced sound through the radio. Go to <a href="https://aprs.fi/">https://aprs.fi/</a> and see if you have been heard!</p>
 		<form onsubmit="if(generate() === null) {alert('Error in assembling packet');}; return false;">
-            <div class="row g-3">
-				<div class="col-sm-2">
+            <div class="row">
+				<div class="col">
 					<label for="text_src" class="form-label">Source Address </label>
-					<input type="text" class="form-control" id="text_src" placeholder="2E0LDN">
+					<input type="text" class="form-control" id="text_src" placeholder="Your callsign">
 				</div>
-				<div class="col-sm-1">
+				<div class="col">
 					<label for="text_src_SSID" class="form-label">SSID</label>
-					<input type="text" class="form-control" id="text_src_SSID" placeholder="0">
+					<input type="text" class="form-control" id="text_src_SSID" value="0">
 				</div>
 				<div id="srcHelp" class="form-text">
-					The source address, limited to 6 characters, is your callsign. 
+					The source address, limited to 6 characters, is your callsign. The SSID is used if you have multiple locations to distinguish between your stations. E.g. 2E0LDN-1 is different to 2E0LDN-3.
 				</div>
 			</div>
-			<div class="row g-3">
-				<div class="col-sm-2">
+			<div class="row">
+				<div class="col">
 					<label for="text_destination" class="form-label">Destination Address</label>
 					<input type="text" class="form-control" id="text_destination" value="APRS">
 				</div>
-				<div class="col-sm-1">
+				<div class="col">
 					<label for="text_destination_SSID" class="form-label">SSID</label>
-					<input type="text" class="form-control" id="text_destination_SSID" placeholder="0">
+					<input type="text" class="form-control" id="text_destination_SSID" value="0">
 				</div>
 				<div id="destHelp" class="form-text">
-					The destination address, limited to 6 characters, is suggested to be APRS.
+					The destination address, limited to 6 characters, is suggested to be APRS. Leave the SSID as 0.
 				</div>
 			</div>
 
-			<div class="row g-3">
-				<div class="col-sm-3">
+			<div class="row">
+				<div class="col">
 					<label for="text_destination" class="form-label">Comma-seprated list of digipeaters</label>
-					<input type="text" class="form-control" id="text_digipeaters" placeholder="WIDE2-1">
+					<input type="text" class="form-control" id="text_digipeaters" placeholder="RELAY,WIDE2-2">
 				</div>
 				<div id="digHelp" class="form-text">
 					Digipeaters are additional address. 
 				</div>
 			</div>
 		
-			<div class="row g-3">
-				<div class="col-sm-3">
+			<div class="row">
+				<div class="col">
 					<label for="select_type" class="form-label">Type of Message & APRS Data Type</label>
 					<select onChange="reflectSelect();" id="select_type" class="form-select form-select-sm" aria-label=".form-select-sm example">
 					  <option value="message" selected>Message (:)</option>
@@ -102,35 +107,42 @@
 				</div>
 			</div>
 
-			<div class="row g-3" id="div_latitude" style="display: none;">
-				<div class="col-sm-3">
+			<div class="row" id="div_latitude" style="display: none;">
+				<div class="col">
 					<label for="text_latitude" class="form-label">Latitude</label>
 					<input type="text" class="form-control" id="text_latitude" placeholder="">
 				</div>
 			</div>
 		
-			<div class="row g-3" id="div_longitude" style="display: none;">
-				<div class="col-sm-3">
+			<div class="row" id="div_longitude" style="display: none;">
+				<div class="col">
 					<label for="text_longitude" class="form-label">Longitude</label>
 					<input type="text" class="form-control" id="text_longitude" placeholder="">
 				</div>
 			</div>
 
-			<div class="row g-3" id="div_comment" style="display: none;">
-				<div class="col-sm-3">
+			<div class="row" id="div_comment" style="display: none;">
+				<div class="col">
 					<label for="text_comment" class="form-label">comment</label>
 					<input type="text" class="form-control" id="text_comment" placeholder="">
 				</div>
 			</div>
 
-			<div id="div_message" class="row g-7">
-				<div class="col-sm-5">
+			<div id="div_message" class="row">
+				<div class="col">
 					<label for="text_message" class="form-label">Message Text</label>
-					<textarea class="form-control" id="text_message" rows="3" placeholder="KEVINS TEST MESSAGE"></textarea>
+					<textarea class="form-control" id="text_message" rows="3"placeholder="KEVINS TEST MESSAGE">HI</textarea>
 				</div>
 			</div>
-			<div class="row g-7">
-				<div class="col-sm-7"><br/>
+			<div id="div_error" class="row">
+				<div class="col"><br/>
+					<div class="alert alert-danger" role="alert" id="text_error" style="display: none;">
+						  message
+					</div>
+				</div>
+			</div>
+			<div class="row">
+				<div class="col"><br/>
 					<input type="button" class="w-1 btn btn-primary btn-sm" value="Generate Sound" onclick="generate();">
 					<input type="button" class="w-1 btn btn-primary btn-sm" value="Play in Browser" id="button_play" disabled="true" onclick="playAudio();">
 					<input type="button" class="w-1 btn btn-primary btn-sm" value="Download Wav File" id="button_download" disabled="true" onclick="location.href=dataURI">

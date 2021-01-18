@@ -26,42 +26,23 @@ function convert_positions(decimal) {
 class ax25
 {
 	
-	/* Important points */
-	// Address fields
-	// ------- ------
-	// The HDLC address field is extended beyond one octet by assigning the least-significant bit of each octet to be an "extension bit". 
-	// The extension bit of each octet is set to zero, to indicate the next octet contains more address information, or one, to indicate this is the last octet of the HDLC address field. 
-	// To make room for this extension bit, the amateur Radio call sign information is shifted one bit left. 
-
-	// Bit stuffing
-	// --- --------
-	// In order to assure that the flag bit sequence mentioned above doesn't appear accidentally anywhere else in a frame, the sending station shall monitor 
-	// the bit sequence for a group of five or more contiguous one bits. Any time five contiguous one bits are sent the sending station shall insert a zero bit 
-	// after the fifth one bit. During frame reception, any time five contiguous one bits are received, a zero bit immediately following five one bits shall be discarded. 
-
-	// Order of Bit Transmission
-	// ----- -- --- ------------
-	// With the exception of the FCS field, all fields of an AX.25 frame shall be sent with each octet's least-significant bit first. 
-	// The FCS shall be sent most-significant bit first. 
-
-	// SSID Field Construction
-	// ---- ----- ------------
-	// SSID bits are CRRSSID0 (for non-repeater use) or HRRSSID0 (for repeater use).
-	// For non-repeater use this will generally be C11SSID0. 
-	// For a v2 Response, C will be 0 for destination and 1 for source. 
-	// E.g. for a desintation SSID of 0 it will be 01100000 and for a source SSID of 0 it will be 1110000
-	// Note that when comparing to direwolf this seems to send 11100000 for both so have followed this below. 
-
-
+	// This class represents a raw AX25 frame.
+	
 	constructor({destination_address, destination_SSID, source_address, source_SSID, digipeaters, information_field}) {
 		
-		/* Create a new AX25 packet */
+		// Create a new AX25 packet from the fields provided in the constructor call.
+
+		// This records if the build is successful or not, only set to true at the end of the frame.
+		this.success = false;
+
+		// Holds any return errors
+		this.error_message = "";
 		
-		// This and the FX25 objects both have bitstream arrays to represent all the bits in the frame 
+		// This and the FX25 objects both have bitstream arrays to represent all the bits in the frame.
 		this.bitstream = [];
 		
 		// These are the starting points for the CRC registers. 
-		// These will get iterated each time we add a bit to the bitstream to calculate the CRC 
+		// These will get iterated each time we add a bit to the bitstream to calculate the CRC. 
 		this.sr1 = 0x1F;
 		this.sr2 = 0x7F;
 		this.sr3 = 0x0F;
@@ -70,23 +51,96 @@ class ax25
 		this.bitCount = 0;
 		this.consecutive_ones = 0;
 		
-		// Set the object parameters appropriately, except for information field. 
-		// TODO - add validation at this point. 
-		this.destination_address = destination_address;		
-		this.destination_SSID = destination_SSID;				
-		this.source_address = source_address;			
-		this.source_SSID = source_SSID;
-		this.digipeaters = digipeaters;
-		
-		var informationField = "";
+		// The following code takes the passed parameters and validates them, before we start doing the actual frame construction. 
 
-		// Now sort the infromation_field. 
+		// Start with the destination and source addresses. 3-6 upper case numbers or letters.
+		const re_address = RegExp('^[0-9A-Z]{3,6}$');
+		if(re_address.test(destination_address) === false) {
+			this.error_message = "Incorrectly formattted destination address. Should be 3-6 alpha-numberic characters only.";
+			return;
+		} 
+		
+		this.destination_address = destination_address;	 
+		
+		if(re_address.test(source_address) === false) {
+			this.error_message = "Incorrectly formattted source address. Should be 1-6 alpha-numberic characters only.";
+			return;
+		}
+		
+		this.source_address = source_address;
+
+		
+		// Now the source and destination SSIDs, should be number between 0 and 15.
+		const re_SSID = RegExp('^[0-9]{1,2}$');
+		if(re_SSID.test(destination_SSID) === false || destination_SSID < 0 || destination_SSID > 15) {
+			this.error_message = "Incorrectly formattted destination SSID. Should be between 0 and 15.";
+			return;
+		}
+
+		this.destination_SSID = destination_SSID;				
+		
+		
+		if(re_SSID.test(source_SSID) === false || source_SSID < 0 || source_SSID > 15) {
+			this.error_message = "Incorrectly formattted source SSID. Should be between 0 and 15.";
+			return;
+		}
+		
+		this.source_SSID = source_SSID;
+		
+		// Digipeaters. This is really cludegy and needs improving. Digipeaters are a comma separeted list, but each 
+		// digipeater and include the SSID as well in the format WIDE2-1 where the '1' is the SSID. This is consistent
+		// with how other sofware including direwolf represents digipeaters addresses.
+		const re_digipeater = RegExp('^[0-9A-Z]{3,6}\-{0,1}[0-9]{0,1}[0-9]{0,1}$');
+		
+		this.digipeaters = [];
+		digipeaters = digipeaters.split(',');
+		console.log("There are",digipeaters.length,"digipeaters.");
+		for(var i =0; i < digipeaters.length; ++i) {
+			if(re_digipeater.test(digipeaters[i]) === false) {
+				this.error_message = "Incorrectly formattted digipeater. Should be in format ABCDEF-S or ABCDEF (e.g. WIDE2-2 or RELAY).";
+				return;
+			}
+			
+			if(digipeaters[i].search('-') == -1) {
+				this.digipeaters[i] = {address: digipeaters[i], SSID: 0};
+			} else {
+				this.digipeaters[i] = {
+					address: digipeaters[i].substring(0,digipeaters[i].search('-')),
+					SSID: parseInt(digipeaters[i].substring(digipeaters[i].search('-')+1,digipeaters[i].length))
+				};
+			}
+		}
+		
+		// Now sort the information field . 
+		const re_message = RegExp('^[A-Z]{1,254}$');
+
+		var informationField = "";
+		
+		// Each type of information field has a different format. This one deals with a simple text message
 		if(information_field.type == 'message') {
+			if(re_message.test(information_field.text) === false) {
+				this.error_message = "Message field should be upper case characters only. ";
+				return;
+			}
+
 			informationField = ":";
 			informationField += information_field.text;
 		}
 		 
+		// The other type of information field covered in this code is a position report.
+		// TODO this needs refining a bit, it's a bit bodged.
+
 		if(information_field.type == 'position') {
+
+			if(latitude < -90 || latitude > 90 ) {
+				this.error_message = "Latitude should be within + or - 90 degrees.";
+				return;
+			}
+			
+			if(longitude < -180 || latitude > 180 ) {
+				this.error_message = "Longitude should be within + or -180 degrees.";
+				return;
+			}
 
 			var latitude  = convert_positions(information_field.latitude);
 			var longitude = convert_positions(information_field.longitude);
@@ -117,10 +171,13 @@ class ax25
 			
 		}
 		
-
+		
 		this.information_field = informationField;
 		
-		// Firstly, we start the AX25 frame by adding a single 0x7e flag byte. 
+		// OK, now we can start actually assembling the AX25 frame.
+		// We will do this by working through each byte sequentially and adding them to the bitstream for this frame. 
+		// Some bytes will be stuffed, and some will count towards the CRC check bytes at the end of the frame. 
+
 		// It is excluded from stuffing and doesn't count towards the CRC
 		this.addByte({b: 0x7e, updateCRC: false,stuff: false});	// Position 0	
 		
@@ -131,35 +188,35 @@ class ax25
 		this.addAddress({address: this.source_address, type: 'source', SSID: this.source_SSID, last: (this.digipeaters.length > 0 ? false : true)});		
 		
 		// Digipeter Addresses (0-8) - 0-56 bytes		
-		// TODO MULTIPLE DIGIPEATERS
-		if(this.digipeaters.length > 0) {
-			this.addAddress({address: this.digipeaters[0], type: 'digipeater', SSID: 1, last: true});		
+		for(var i = 0; i < this.digipeaters.length; ++i) {
+			this.addAddress({address: this.digipeaters[i].address, type: 'digipeater', SSID: this.digipeaters[i].SSID, last: (i == (this.digipeaters.length - 1))});		
 		}
 
-
-		// TODO - create digipeater addresses
-
 		// Control Field (UI)- 1 byte 
-		// This and the protocol field are static and identify this as an AX25 frame. 
+		// This and the protocol field are fixed constants and identify this as an AX25 frame. 
 		this.addByte({b: 0x03});	
 		
 		// Protocol Field (UI)- 1 byte  
 		this.addByte({b: 0xf0});	
 
 		// Information Field - 1-256 bytes 
-		// TODO - there is lots of logic to deal with here.
 		for (let c of this.information_field)
 		{
 			this.addByte({b: c.toUpperCase().charCodeAt(0)});		
 		}
 	
-		// FCS 2 bytes 
+		// As we have been adding bytes amd bits, some have been updating the CRC as we go along.
+		// Now we just need to get the current state of the two CRC bytes and add them in at the end.
+
 		var CRC = this.getCRC();
 		this.addByte({b: CRC.byte1, updateCRC: false});
 		this.addByte({b: CRC.byte2, updateCRC: false});
 			
 		// End the AX25 frame with a 0x7e flag
 		this.addByte({b: 0x7e, updateCRC: false, stuff: false});
+		
+		// And we have been successful. We now have a bitstream made up of all the bytes we've added.
+		this.success = true;
 
 	}
 	
@@ -217,6 +274,12 @@ class ax25
 			if (i == 6 && type != 'digipeater')
 			{
 				var mask = 0x70;		
+				b = mask |= SSID;
+			}
+
+			if (i == 6 && type == 'digipeater')
+			{
+				var mask = 0x30;		
 				b = mask |= SSID;
 			}
 			
@@ -466,24 +529,20 @@ class modem
 
 class fx25
 {
-	
-	// FX25 Details
-	// ---- -------
-	// FX25 working document is http://www.stensat.org/docs/FX-25_01_06.pdf
-
-
 	constructor(a) {
 		
+		// This class takes an AX25 frame (more specifically, it's bitstream) and wraps it in some error 
+		// correction data, meaning that if errors occur 'over the air' they are are able to be resolved. 
+		// This is in contracts to AX25 where a single bit error means the whole frame will be discarded.
+
 		this.bitstream = [];
 		
-		console.log("Starting FX25 frame construction.");
-		
-		// First step is to get the AX25 frame padded 
+		// First step is to get the AX25 frame padded. The  
 		// Start by calculating the packet size required aligned to
 		// the rs parameters
 
-		console.log('--FX25 Padding');
-		console.log('----AX25 Packet pre-packing is', a.bitstream.length,'bits long (',a.bitstream.length/8,' bytes)')
+		//console.log('--FX25 Padding');
+		//console.log('----AX25 Packet pre-packing is', a.bitstream.length,'bits long (',a.bitstream.length/8,' bytes)')
 		
 		var bits_required = 239 * 8;
 		if(a.bitstream.length <= 32 * 8) 
@@ -497,10 +556,10 @@ class fx25
 			return false;
 		}
 
-		console.log("----Target packet length for RS is",bits_required,"bits (",bits_required/8,' bytes)');
+		//console.log("----Target packet length for RS is",bits_required,"bits (",bits_required/8,' bytes)');
 
 		var bits_remaining = bits_required - a.bitstream.length;
-		console.log('----Therefore we will pad with',bits_remaining,'bits.')
+		//console.log('----Therefore we will pad with',bits_remaining,'bits.')
 
 		while (bits_remaining> 0)
 		{
@@ -514,12 +573,12 @@ class fx25
 			}
 		}
 		
-		console.log('----Padding of AX25 is completed and it is now',a.bitstream.length,'bits.')
+		//console.log('----Padding of AX25 is completed and it is now',a.bitstream.length,'bits.')
 
 		
 		// Now we need to calculate the FEC Check symbols for the bitstream over the codelength. 		
-		console.log('----Calculating the FEC Check Symbols');
-		console.log("----FEC codeblock (AX25 packet) size is exactly",a.bitstream.length/8,"bytes.");
+		//console.log('----Calculating the FEC Check Symbols');
+		//console.log("----FEC codeblock (AX25 packet) size is exactly",a.bitstream.length/8,"bytes.");
 		
 		// Turn the bitstream into bytes for rs calculation
 		var message = [];
@@ -536,12 +595,12 @@ class fx25
 			message.push(byte);
 		}
 		
-		console.log("----FEC codeblock is",message.length,"bytes.")
+		//console.log("----FEC codeblock is",message.length,"bytes.")
 		var rs = new ReedSolomon();
 		rs.encode(message);
 		
 		
-		console.log("----checkbytes are",rs.checkbytes.length,"bytes.");
+		//console.log("----checkbytes are",rs.checkbytes.length,"bytes.");
 
 		for (var i=0;i<rs.checkbytes.length; ++i )
 		{
@@ -561,25 +620,25 @@ class fx25
 		}
 		
 		// Correlation tag!
-		console.log("----Adding Correlation tag.");
+		//console.log("----Adding Correlation tag.");
 		for (var i=rs.correlation_tag.length - 1;i >= 0; --i )
 		{
 			this.addByte({b: Number(rs.correlation_tag[i])});
 		}
 
 		// AX25 packet
-		console.log("----Adding AX25 packet.");
+		//console.log("----Adding AX25 packet.");
 		this.bitstream = this.bitstream.concat(a.bitstream);
 		
 		// Checkbytes
-		console.log("----Adding Checkbytes.");
+		//console.log("----Adding Checkbytes.");
 		for (var i=0;i<rs.checkbytes.length ;++i )
 		{
 			this.addByte({b: rs.checkbytes[i]})
 		}
 		
 		// Finally 2 postamble bytes
-		console.log('--FX Postamble');
+		//console.log('--FX Postamble');
 		this.addByte({b: 0x7e});	
 		this.addByte({b: 0x7e});	
 
@@ -610,19 +669,17 @@ class fx25
 	
 }
 
-function information_position_report(longitude, latitude, comment) {
-}
-
-function information_text() {
-}
 
 function generate() {
 	
-	/*	This function creates the objects to represent the ax25 frame and then 
-		passes them to the modem object. */
+	// This function takes the form input, creates the objects to represent the ax25 and the fx25 frame and then 
+    // passes them to the modem object to turn into a sound file to play in the browser or to save as a file.  
 
-	/* First of all we need to build out the correct information_field data */
-	
+	// Clear any displayed errors on the form.
+	$('text_error').style.display = "none";
+
+	// We create a message object to represent the different parts of the packet payload - currently two types are supported,
+	// a simple text message or an encoded position + comment.
 	var message = {};
 	message.type = $('select_type').value;
 	
@@ -639,38 +696,47 @@ function generate() {
 		
 	}
 	
-	// Start by creating a raw ax25 frame.
+	// First part of the process is to create the raw AX25 packet.
 	a = new ax25(
 		{
 			destination_address: ($('text_destination').value),
 			destination_SSID: ($('text_destination_SSID').value),
 			source_address: ($('text_src').value),
 			source_SSID: ($('text_src_SSID').value),
-			digipeaters: [($('text_digipeaters').value)],			//note array
+			digipeaters: ($('text_digipeaters').value),	
 			information_field: message
 		});
 	
-	if(a === null) {
-		return null;
+	// The AX25 constructor returns a result object that can be used to feed back to the form
+	// for example, validation errors. If a.success is false, display ther error and give up.
+
+	if(!a.success) {
+		console.log(a.error_message);
+		$('text_error').style.display = "block";
+		$('text_error').innerHTML = a.error_message;
+		return;
 	}
 
 	// Now, take the ax25 frame and wrap it with the necessary components for a fx25 frame.
 	f = new fx25(a);
 	
-	// Create a modem object to make the actual sounds
+	// Create a modem object to make the actual sounds from the bitstream in the fx25 frame. 
 	m = new modem();
 	
-	// Generate the audio. This populates the dataURI variable with as well.
+	// Generate the audio. This populates the global dataURI variable with the audo data.
 	m.generateAudio(f);
 	
-	// Play the audio through the browser.
+	// Play the audio through the browser, taking the global dataURI variable and playing it in browser.
 	m.playAudio();
-
+	
+	// Because we've got the audio ready, make the download/play buttons on the form available to press. 
 	$('button_download').disabled = false;
 	$('button_play').disabled = false;
 }
 
 function playAudio() {
+	// Play the audio. This only works once the audio file has been generated.
+	
 	m.playAudio();
 }
 

@@ -1,12 +1,7 @@
-/***********************************************************************************************************************
-* FSK code has been adapted from http://sixteenmillimeter.github.io/Javascript-FSK-Serial-Generator-for-Mobile-Safari/
-*
-************************************************************************************************************************
-
-/* Globals */
+// Globals 
 var dataURI, audio;
 
-/* Helper functions */
+// Helper functions
 
 function $(name) {
 	return document.getElementById(name);
@@ -90,6 +85,7 @@ class ax25
 		// Digipeaters. This is really cludegy and needs improving. Digipeaters are a comma separeted list, but each 
 		// digipeater and include the SSID as well in the format WIDE2-1 where the '1' is the SSID. This is consistent
 		// with how other sofware including direwolf represents digipeaters addresses.
+
 		const re_digipeater = RegExp('^[0-9A-Z]{3,6}\-{0,1}[0-9]{0,1}[0-9]{0,1}$');
 		
 		this.digipeaters = [];
@@ -118,7 +114,7 @@ class ax25
 
 		var informationField = "";
 		
-		// Each type of information field has a different format. This one deals with a simple text message.
+		// Each type of information field has a different format. This one deals with a bulletin.
 		if(information_field.type == 'bulletin') {
 			if(re_message.test(information_field.text) === false) {
 				this.error_message = "Message field should printable ASCII characters only. ";
@@ -149,8 +145,6 @@ class ax25
 						
 			informationField   = "!";
 			
-			console.log(information_field);
-
 			informationField  = informationField + latitude.degrees.toString().padStart(2,'0');
 			informationField  = informationField + latitude.minutes.toString().padStart(2,'0');
 			informationField  = informationField + ".";
@@ -254,9 +248,9 @@ class ax25
 	addAddress({address, SSID, type, last = false}) {
 		console.log(address, SSID, type, last);
 
-	/* This function adds an address to the frame. 
-	   There are 7 bytes in the address field, the first 6 are the callsign and 7 is the SSID
-	   addresses are all upper case and are padded with spaces if less than 6 chacters */
+		// This function adds an address to the frame. 
+		// There are 7 bytes in the address field, the first 6 are the callsign and 7 is the SSID
+		// addresses are all upper case and are padded with spaces if less than 6 chacters 
 		
 		// The current byte
 		var b;
@@ -307,7 +301,7 @@ class ax25
 
 	addByte({b, updateCRC = true, stuff = true}) {
 		
-		/* This is the core function of adding bytes to the bitstream */
+		// This is the core function of adding bytes to the bitstream.
 		
 		for(let j = 0; j < 8; j++) {
 
@@ -346,7 +340,8 @@ class ax25
 
 
 	logBitstream() {
-		/* Log the bitstream to the console for debugging purposes */
+
+		// Log the bitstream.
 		for (let i = 0; i < this.bitstream.length; i = i + 8)
 		{
 			console.log(i,': ',this.bitstream[i], this.bitstream[i+1], this.bitstream[i+2], this.bitstream[i+3], this.bitstream[i+4], this.bitstream[i+5], this.bitstream[i+6], this.bitstream[i+7]);
@@ -356,7 +351,9 @@ class ax25
 
 	
 	getCRC() {
-		/* Return the two bytes, assembled from the sr1, sr2, sr3 registers */
+		
+		// Return the two CRC bytes, assembled from the sr1, sr2, sr3 registers.
+		
 		var byte1 = 
 			(((this.sr2 & 8) != 8) * 128) + 
 			(((this.sr2 & 4) != 4) * 64) + 
@@ -383,24 +380,10 @@ class ax25
 class modem
 {
 	
-	/* Important points */
-	// Taken from http://n1vg.net/packet/
-	// "1200 baud packet uses Bell 202 AFSK. AFSK is audio frequency shift keying, 
-	// which means the signal is modulated using two audio tones, as opposed to regular FSK, 
-	// where the radio frequency carrier itself is shifted in frequency. 
-	// Using FSK generally requires a DC-coupled connection directly to the radio's discriminator. 
-	// AFSK has the advantage of working through a regular audio path, which makes it well suited for 
-	// use with radios designed for voice."
-	//
-	// Bell 202 uses a tone of 1200 hz for mark and 2200 hz for space. This is about as far as most packet
-	// documentation goes, and unfortunately it's a bit misleading in this case. Packet uses 
-	// NRZI (non-return to zero inverted) encoding, which means that a 0 is encoded as a change in tone, 
-	// and a 1 is encoded as no change in tone. It is also worth noting that the tones must be continuous phase 
-	// - when you shift from one tone to another, there can't be any jump in phase. 
-	// For example, if you're sending a 1200 hz tone and the waveform is at its peak when you switch to 2200 hz, 
-	// the waveform is still at its peak - it can't start back at zero, or any other point. 
-	// This makes it impossible to generate proper AFSK using something like the Basic Stamp's audio tone function. 
-
+	// The modem class takes a bitstream (either from the AX25 and the FX25 frame) 
+	// and converts it into an audio stream. 
+	
+	// This and the chr32 function are used to encode the wav file.
 	chr8() {
 		return Array.prototype.map.call(arguments, function(a){
 			return String.fromCharCode(a&0xff)
@@ -412,17 +395,25 @@ class modem
 			return String.fromCharCode(a&0xff, (a>>8)&0xff,(a>>16)&0xff, (a>>24)&0xff);
 		}).join('');
 	}
+	
 
 	constructor() {			
 		
-		this.sampleRate = 44100;
-		this.baud = 1200;
+		// Create the modem class. This could be updated later on to set different modem parameters. 
 		
-		this.freqHigh = 2200;
+		this.freqHigh = 2200;			
 		this.freqLow  = 1200;
 		
-		this.spb = this.sampleRate / this.baud; // 36 samples per bit
-
+		this.sampleRate = 44100;		// This is the sample rate of the audio output in samples per second. 
+		this.baud = 1200;				// 1200 baud is 1200 bits per second
+		
+		// 44100 div by 1200 = 36.75 bits per second. 36.75 bits per second is a problem, because that means
+		// later on we are going to have to deal with non-integer bits. Other implementations deal with this
+		// by taking a multiple of 1200 (e.g. 48000) and either using that native sampleRate or later on down
+		// sampling. I'm not that clever so had to deal with this by working in a 36,36,36,37,36,36,36,37 pattern
+		this.spb = this.sampleRate / this.baud; 
+		
+		// This amplitudes array is where we add the audio samples. So this holds the audio stream.
 		this.amplitudes = [];
 		
 		this.nextPhaseCorrection  = 0;
@@ -434,20 +425,23 @@ class modem
 
 	pushData(freq, samples) {
 
-		/* Add the incremental data. Needs to respect current phase information */
+		// Add a bit of data to the audo stream. We need to respect current phase information.
 		// To ensure any frequency changes remain in phase, we have to add on a phase correction so that 
 		// the starting phase of the new waveform is the same as the old frequency would have been if it had continued. 
 		// To do this we keep a running tally of what the next phase would have been if it had continued one timestep forward
 		// and then calculate the new phase correction based on the difference. 
 		
-		// TODO - mmake samples dynamic, it's not used at the moment. 
-
 		var phaseCorrection = this.nextPhaseCorrection;
 		
-		//console.log("starting bit",this.bitCount,"at sample number ",this.sampleN);
+		// We keep track of the bitcount as we go on, so we can make sure every fourth bit is 37 bits, not 36. 
+		// of course, this should all really be updated if we change the baud rate please. 
+
 		samples = this.bitCount % 4 == 0 ? 36 : 37;
 		samples = this.bitCount == 0 ? 37 : samples;
+		
+		// This code adds the sine wave to the amplitudes list. 
 		for (var i = 0; i < samples; i++) {
+		
 			var phase = (2 * Math.PI) * (i / this.sampleRate) * freq + phaseCorrection;
 			var v = 128 + 127 * Math.sin(phase);
 			
@@ -456,12 +450,14 @@ class modem
 			this.nextPhaseCorrection = (2 * Math.PI) * ((i+1) / this.sampleRate) * freq + phaseCorrection;
 			this.sampleN++;
 		}
-		//console.log("ending bit",this.bitCount,"at sample number ",this.sampleN-1);
-
+		
+		// And now onto the next bit. 
 		this.bitCount++;
 	}
-
+	
 	padData(samples) {
+		
+		// Add a certain amount of 'white space' to the audio stream. 
 		for (var i = 0; i < samples; i++) {
 			this.data += this.chr8(0);
 			this.amplitudes.push(0);
@@ -471,16 +467,24 @@ class modem
 	
 	generateAudio(source) {
 		
-		/* This is the main loop for generating bits */
+		// This function loops through the bit stream and then inserts the tones into the audio stream.
 		this.bitstream = source.bitstream;
 		
 		var currentTone = this.freqLow;
 			
 		var newTone = 0;
 		var bit = 0;
-
+		
+		// Iterating through the bitstream.
 		while(this.bitstream.length) {
+
+			// Get the next bit from the bitstream.
 			bit = this.bitstream.shift();
+
+			// This is the FSK part. We are using NRZI in which a 0 bit is encoded as a change, and a
+			// 1 bit is encoded as not change. So the tone alternates if a 0 bit is encoded, and is unchanged if
+			// a 1 bit is encoded. 
+
 			if(bit == 0) {
 				newTone = (currentTone == this.freqHigh ? this.freqLow : this.freqHigh);
 				currentTone = newTone;
@@ -493,6 +497,7 @@ class modem
 			
 		}
 
+		// We want to add 10 samples of white space at the end, just to stop any clipping effects.
 		this.padData(10)
 
 	}
@@ -500,12 +505,12 @@ class modem
 	
 	playAudio() {
 		
+		// Generate the encoded WAV audio from the data.
 
 		this.data = "RIFF" + this.chr32(this.sampleN+36) + "WAVE" +
 				"fmt " + this.chr32(16, 0x00010001, this.sampleRate, this.sampleRate, 0x00080001) +
 				"data" + this.chr32(this.sampleN) + this.data;
 
-		/* Generate the audio tone */
 		dataURI = "data:audio/wav;base64," + escape(btoa(this.data));
 		audio = new Audio(dataURI);
 		audio.play();
@@ -513,6 +518,9 @@ class modem
 	}
 	
 	generateXLSX() {
+		
+		// I've left this in for future testing purposes - it dumps the audio stream to a
+		// spreadsheet so you can inspect the audio file. 
 		
 		/* original data */
 		var filename = "audio.xlsx";
@@ -539,13 +547,7 @@ class fx25
 
 		this.bitstream = [];
 		
-		// First step is to get the AX25 frame padded. The  
-		// Start by calculating the packet size required aligned to
-		// the rs parameters
-
-		//console.log('--FX25 Padding');
-		//console.log('----AX25 Packet pre-packing is', a.bitstream.length,'bits long (',a.bitstream.length/8,' bytes)')
-		
+		// First step is to get the AX25 frame padded. The Reed-Solomon algo needs to have certain bit_sized
 		var bits_required = 239 * 8;
 		if(a.bitstream.length <= 32 * 8) 
 			bits_required = 32 * 8;
@@ -558,10 +560,7 @@ class fx25
 			return false;
 		}
 
-		//console.log("----Target packet length for RS is",bits_required,"bits (",bits_required/8,' bytes)');
-
 		var bits_remaining = bits_required - a.bitstream.length;
-		//console.log('----Therefore we will pad with',bits_remaining,'bits.')
 
 		while (bits_remaining> 0)
 		{
@@ -574,13 +573,6 @@ class fx25
 				bits_remaining = 0;
 			}
 		}
-		
-		//console.log('----Padding of AX25 is completed and it is now',a.bitstream.length,'bits.')
-
-		
-		// Now we need to calculate the FEC Check symbols for the bitstream over the codelength. 		
-		//console.log('----Calculating the FEC Check Symbols');
-		//console.log("----FEC codeblock (AX25 packet) size is exactly",a.bitstream.length/8,"bytes.");
 		
 		// Turn the bitstream into bytes for rs calculation
 		var message = [];
@@ -597,17 +589,8 @@ class fx25
 			message.push(byte);
 		}
 		
-		//console.log("----FEC codeblock is",message.length,"bytes.")
 		var rs = new ReedSolomon();
 		rs.encode(message);
-		
-		
-		//console.log("----checkbytes are",rs.checkbytes.length,"bytes.");
-
-		for (var i=0;i<rs.checkbytes.length; ++i )
-		{
-			//console.log("----FEC Symbol",i,"is",rs.checkbytes[i].toString(16));
-		}
 
 		// Now assemble all the components into the packet
 		// preamble + correlation tag + ax25 package + fx25 package
@@ -622,25 +605,21 @@ class fx25
 		}
 		
 		// Correlation tag!
-		//console.log("----Adding Correlation tag.");
 		for (var i=rs.correlation_tag.length - 1;i >= 0; --i )
 		{
 			this.addByte({b: Number(rs.correlation_tag[i])});
 		}
 
 		// AX25 packet
-		//console.log("----Adding AX25 packet.");
 		this.bitstream = this.bitstream.concat(a.bitstream);
 		
 		// Checkbytes
-		//console.log("----Adding Checkbytes.");
 		for (var i=0;i<rs.checkbytes.length ;++i )
 		{
 			this.addByte({b: rs.checkbytes[i]})
 		}
 		
 		// Finally 2 postamble bytes
-		//console.log('--FX Postamble');
 		this.addByte({b: 0x7e});	
 		this.addByte({b: 0x7e});	
 
